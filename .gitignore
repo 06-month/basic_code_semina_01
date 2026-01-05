@@ -1,0 +1,46 @@
+# hanbat 디렉토리 제외
+hanbat/
+
+# 데이터셋 제외
+data/
+
+# Wandb 로그 제외
+wandb/
+
+# 체크포인트 파일 제외
+checkpoints/
+
+# Python 캐시 파일
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# VS Code 설정
+.vscode/
+
+# Conda 환경
+.conda/
+
+# 홈 디렉토리
+~/
+
+# 기타
+*.log
+*.pth
+*.pth.tar
+*.tar
+.DS_Store
+*.swp
+*.swo
+*~
+
+# 환경 변수 파일
+.env
+.env.local
+
+# Jupyter Notebook 체크포인트
+.ipynb_checkpoints
+
+# PaddleOCR 모델 파일
+.paddleocr/
