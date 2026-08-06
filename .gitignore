@@ -44,3 +44,6 @@ __pycache__/
 
 # PaddleOCR 모델 파일
 .paddleocr/
+
+# Source documents for docs/*.pdf (kept locally, not published)
+docs/*.hwpx

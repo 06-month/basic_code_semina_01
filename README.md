@@ -1,32 +1,194 @@
-# Tiny-ImageNet 200 분류 프로젝트
+# Tiny-ImageNet-200 Classification
 
-Tiny-ImageNet 200 데이터셋을 이용한 이미지 분류 프로젝트입니다. 다양한 모델 아키텍처(ResNet, ViT, Swin Transformer)와 최신 학습 기법들을 적용하여 높은 정확도를 달성합니다.
+**From a provided ResNet-18 baseline to 87.22 % top-1 validation accuracy — a five-week record of
+what was tried, what the data suggested, and what the errors said.**
 
-## 📋 주요 특징
+| | top-1 val acc |
+|---|---:|
+| Provided baseline (ResNet-18, SGD, MultiStep) | 52.96 |
+| **Final (Swin-Tiny, progressive augmentation, 100 epochs)** | **87.22** |
+| | **+34.26 %p** |
 
-- **다양한 모델 아키텍처 지원**
-  - ResNet 계열: ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
-  - Transformer 계열: ViT-Small, DeiT-Small, Swin-Tiny
+Tiny-ImageNet-200: 200 classes at 64×64. Few samples per class and low resolution, so the dataset
+overfits quickly and ImageNet-pretrained models cannot be dropped in unchanged.
 
-- **고급 데이터 증강 기법**
-  - Progressive Augmentation: 학습이 진행됨에 따라 증강 강도를 점진적으로 증가
-  - CutMix & MixUp: 배치 레벨 증강 기법
-  - Albumentations 라이브러리 활용
+Weekly reports with the full numbers: [`docs/`](docs/) (week 1–5, in Korean).
 
-- **실험 관리 및 모니터링**
-  - Weights & Biases (wandb) 통합
-  - 학습/검증 메트릭 실시간 추적
-  - 체크포인트 자동 저장
+---
 
-## 🚀 사용 방법
+## Starting Point
 
-### 환경 요구사항
+This project began from a course-provided skeleton — a working ResNet-18 training loop with no
+augmentation, no logging, and a fixed schedule. The table below is what changed.
 
-- Docker >= 24.0.6
-- CUDA >= 11.6
-- GPU 메모리: 최소 8GB 권장
+| | Provided skeleton | This repository |
+|---|---|---|
+| Architectures | ResNet-18 only | ResNet-18/34/50/101/152, ViT-S, DeiT-S, **Swin-T** |
+| Optimizer | SGD (lr 0.1, momentum 0.9, wd 5e-4) | **AdamW** (lr 2e-5, wd 0.05) |
+| LR schedule | MultiStep, ×0.1 at epochs 20/30/35 | **Cosine annealing** |
+| Regularisation | — | dropout 0.2 / attn 0.1 / drop-path 0.1 |
+| Augmentation | — | Albumentations + **CutMix / MixUp**, strength-scheduled |
+| Logging | stdout | **wandb**, epoch-aligned metrics |
+| Reproducibility | — | seed fixed, `cudnn.deterministic=True` |
+| Epochs | 40 | 100 |
 
-### 1. Docker 환경 구축
+CutMix and MixUp are implemented directly in `train.py` (including `rand_bbox`) rather than pulled
+from a library, so the mixing probability and the Beta parameter could be driven by the
+augmentation schedule described below.
+
+---
+
+## Experiment Log
+
+Five weeks, measured as top-1 validation accuracy. Every row was run; the path is not a
+reconstruction.
+
+### Week 1 — read the data first, then tune
+
+| Change | top-1 val |
+|---|---:|
+| Baseline (ResNet-18, SGD, MultiStep, 40 ep) | **52.96** |
+| + Cosine Annealing LR | 53.22 |
+| + Label Smoothing | 53.82 |
+| **+ Albumentations** | **60.42** |
+| + Dropout | 58.68 |
+| ResNet-152 + SGD | 58.98 |
+| ResNet-101 + AdamW | 54.12 |
+
+Augmentations were chosen from inspection of the dataset rather than from a default list:
+
+- **No vertical flip.** Many classes are objects subject to gravity; an upside-down image is not a
+  plausible sample.
+- **No hue/saturation shift.** Classes such as toad and frog share a shape and differ mainly in
+  colour, so colour jitter would erase the distinguishing signal.
+
+Both exclusions were later reconsidered — dropping them outright was recorded at the time as
+probably an overcorrection.
+
+The split was also found to be skewed: **train : val : test = 91 : 4.5 : 4.5**.
+
+### Week 2 — scale the baseline, then leave CNNs
+
+| Change | top-1 val |
+|---|---:|
+| ResNet-18, 60 epochs | 59.28 |
+| ResNet-18, 60 ep + batch 512 + lr 0.4 | 61.12 |
+| CoAtNet-0 (RandAugment + MixUp/CutMix + AdamW + LS 0.1) | 76.18 |
+| CoAtNet-0 + batch 256 + lr 0.002 | **77.38** |
+
+The jump from 61 to 77 with a conv+attention hybrid is what moved the project off ResNet.
+
+### Week 3 — compare at equal compute, then fix the learning rate
+
+Three lightweight ViT-family models were compared **at matched GFLOPs (~4.5 G)**, under identical
+settings (cosine LR, warmup, 224×224, seed 40, AdamW, 40 epochs, lr 1e-3):
+
+| Model | GFLOPs | top-1 val |
+|---|---|---:|
+| ViT-Small | ~4–5 G | 65.80 |
+| DeiT-Small | ~4.6 G | 65.80 |
+| **Swin-Tiny** | ~4.5 G | **68.46** |
+
+Swin-Tiny wins at equal cost, so the rest of the project uses it.
+
+| Change | top-1 val |
+|---|---:|
+| Swin-T | 68.46 |
+| + dropout (0.2 / 0.1 / 0.1) | 71.28 |
+| + Albumentations | 70.44 |
+| + MixUp/CutMix hybrid | 75.88 |
+| **+ lr 1e-3 → 1e-5, warmup removed** | **85.93** |
+
+**The single largest gain in the project is the learning rate: +10 %p.** Training was unstable
+early on, which pointed at the learning rate being far too high for a pretrained Swin. Once the
+initial LR was lowered to 1e-5, warmup no longer had a purpose — its job is to ramp *up* from a
+reduced start — so it was removed rather than kept out of habit.
+
+### Week 4 — schedule the augmentation strength
+
+Results were now underfitting, which suggests augmenting weakly at the start and strongly later.
+**PS-SapAug (2024)** proposes exactly that, using a step-wise schedule. This project applies the
+same idea with a **cosine ramp** instead, on the expectation that a smooth 0→1 increase trains
+more evenly than discrete steps:
+
+```python
+progress     = epoch / args.epochs
+aug_strength = 1 - math.cos((math.pi / 2) * progress)   # 0.0 → 1.0
+```
+
+`aug_strength` scales the transform probabilities, the CutMix/MixUp application probability, and
+the Beta distribution parameter together.
+
+Batch size also moved 64 → 128, so the learning rate was scaled 1e-5 → 2e-5, following the linear
+scaling rule from *Bag of Tricks*.
+
+| Change | top-1 val |
+|---|---:|
+| Swin-T + lr 1e-5 | 85.93 |
+| **+ Aug Strength (cosine)** | 86.78 |
+| **+ 100 epochs** | **87.22** |
+| − GaussNoise | 85.14 |
+| Swin-Large (batch 32, lr 3e-6, **11 epochs only**) | 92.05 |
+
+Removing GaussNoise — on the theory that noise hurts at low resolution — made things worse, so it
+stayed. Swin-Large reached 92.05 but only 11 epochs were run; it is a partial result, not a
+comparable one.
+
+### Week 5 — a bug, then error analysis
+
+The strength schedule turned out **not to reach CutMix/MixUp**: the transform probabilities were
+scaled but the mixing coefficients were not. After wiring `strength` through them as well, at a
+fixed 40 epochs for comparability:
+
+| Change | top-1 val |
+|---|---:|
+| Swin-T + strength | 86.78 |
+| **+ strength applied to CutMix/MixUp** | **87.08** |
+
+---
+
+## Error Analysis
+
+Rather than tuning augmentation blindly, the model was asked which images it fails on.
+
+At the best epoch (37) and the last epoch (40), the five hardest classes were extracted and, for
+each failing image, the predicted class distribution printed as percentages. Two patterns emerged:
+
+| Observation | Interpretation | Change |
+|---|---|---|
+| `frying pan` occluded by food; `pole` small and at the frame edge | the object is not where the model expects it | **RandomResizedCrop** |
+| `syringe` hidden behind a hand | partial occlusion | **CoarseDropout** |
+
+| Change | top-1 val |
+|---|---:|
+| Swin-T + strength (CutMix/MixUp) | 87.08 |
+| + RandomResizedCrop | 86.50 |
+| + CoarseDropout | 86.96 |
+| + both | 87.00 |
+
+Neither transform improved on 87.08 at 40 epochs. The value of this step is the method — reading
+the failure mode and choosing an augmentation that targets it — rather than the score it produced.
+
+---
+
+## Key Hyperparameters
+
+| Argument | Default | |
+|---|---|---|
+| `--arch` | `swin_tiny` | resnet18/34/50/101/152, vit_small, deit_small, swin_tiny |
+| `--lr_base` | `2e-5` | linearly scaled with batch size |
+| `--batch_size` | `128` | |
+| `--epochs` | `100` | |
+| `--drop_rate` | `0.2` | |
+| `--attn_drop_rate` | `0.1` | |
+| `--drop_path_rate` | `0.1` | |
+
+Optimizer AdamW (`weight_decay=0.05`), cosine annealing over `--epochs`, loss cross-entropy,
+seed 42 with `cudnn.deterministic=True`.
+
+---
+
+## Environment
 
 ```bash
 cd docker
@@ -35,182 +197,82 @@ sh run_docker.sh
 docker attach <DOCKER_CONTAINER_NAME>
 ```
 
-### 2. 데이터셋 다운로드
+Docker ≥ 24.0.6, CUDA ≥ 11.6. Dataset:
+[Tiny-ImageNet-200](http://cs231n.stanford.edu/tiny-imagenet-200.zip), extracted to
+`./data/tiny-imagenet-200`.
+
+The batch manager (`batch_manager.py`) is part of the course-provided skeleton and is not
+included here.
+
+### Configuration used for the reported runs
 
 ```bash
-cd data
-sh download_and_unzip.sh
+python main.py --arch swin_tiny  --batch_size 128 --lr_base 2e-5 --epochs 100
+python main.py --arch resnet18   --batch_size 128 --lr_base 1e-3 --epochs 100
+python main.py --arch vit_small  --batch_size 64  --lr_base 2e-5 --epochs 100
 ```
 
-데이터셋은 `./data/tiny-imagenet-200` 디렉토리에 저장됩니다.
+Checkpoints are written per epoch to `checkpoints/YYYY-MM-DD_HH:MM/`, the best model to
+`best.pth.tar`, and test predictions to `best_test_preds.csv`. wandb logs train/val loss and
+top-1/top-5 accuracy against a shared `epoch` axis, plus learning rate and augmentation strength.
 
-### 3. 학습 실행 예제
+---
 
-본 프로젝트는 다양한 모델 아키텍처와 설정으로 실험을 수행했습니다.
+## Limitations
 
-#### 기본 실행 (Swin-Tiny)
-```bash
-python main.py --arch swin_tiny --batch_size 128 --epochs 100
-```
+- **The 91 : 4.5 : 4.5 split was never rebalanced.** It was identified in week 1 and a move to
+  8 : 1 : 1 was planned, but every number above is measured on the original skewed split.
+- **Swin-Large's 92.05 is not comparable.** It is an 11-epoch reading against 100-epoch runs, and
+  it was not trained to completion.
+- **Vertical flip and hue/saturation augmentation were excluded on inspection alone**, never
+  tested. The reports themselves note this was probably an overcorrection.
+- **RandomResizedCrop and CoarseDropout did not beat the configuration they were meant to improve**
+  (87.08 → 87.00). The error analysis pointed at the right failure mode; the fix did not follow.
+- **Single seed, single run per configuration.** No variance is reported, so differences of a few
+  tenths of a point should not be read as meaningful.
+- Runs differ in epoch budget across weeks (40 / 50 / 60 / 100), so not every row in the log is
+  directly comparable to every other.
 
-#### ResNet18으로 실행
-```bash
-python main.py --arch resnet18 --batch_size 128 --lr_base 1e-3 --epochs 100
-```
+---
 
-#### ViT-Small로 실행
-```bash
-python main.py --arch vit_small --batch_size 64 --lr_base 2e-5 --epochs 100
-```
-
-> 💡 **참고**: 실험은 이미 완료되었으며, 위 명령어들은 재현을 위한 예제입니다.
-
-## 🛠️ 주요 하이퍼파라미터
-
-| 파라미터 | 기본값 | 설명 |
-|---------|-------|------|
-| `--arch` | `swin_tiny` | 모델 아키텍처 선택 |
-| `--lr_base` | `2e-5` | 초기 학습률 |
-| `--batch_size` | `128` | 배치 크기 |
-| `--epochs` | `100` | 전체 학습 에포크 수 |
-| `--drop_rate` | `0.2` | Dropout 비율 |
-| `--attn_drop_rate` | `0.1` | Attention Dropout 비율 |
-| `--drop_path_rate` | `0.1` | Drop Path 비율 |
-
-## 📊 프로젝트 구조
+## Repository Structure
 
 ```
 .
-├── main.py                    # 메인 학습 스크립트
-├── train.py                   # 학습 루프 (CutMix/MixUp 포함)
-├── val.py                     # 검증 루프
-├── transforms.py              # 데이터 증강 변환
-├── utils.py                   # 유틸리티 함수
-├── batch_manager.py           # 데이터 로더 (별도 구현 필요)
-├── arch/
-│   └── resnet.py             # ResNet 아키텍처
-├── docker/
-│   ├── Dockerfile            # Docker 이미지 정의
-│   ├── build_docker.sh       # Docker 빌드 스크립트
-│   └── run_docker.sh         # Docker 실행 스크립트
-├── size_distribution_histograms.png  # 데이터셋 분석
-└── split_image_counts.png            # 데이터 분할 통계
+├── main.py                    # model selection, optimizer, schedule, aug-strength loop
+├── train.py                   # training loop with CutMix / MixUp and rand_bbox
+├── val.py                     # validation and test-time prediction
+├── transforms.py              # strength-parameterised Albumentations pipeline
+├── utils.py                   # accuracy, AverageMeter
+├── arch/resnet.py             # ResNet variants
+├── docker/                    # Dockerfile, build and run scripts
+├── docs/                      # weekly reports, week 1–5 (Korean)
+├── size_distribution_histograms.png   # image-size distribution
+└── split_image_counts.png             # train/val/test counts
 ```
 
-## 🔬 주요 기술
+---
 
-### 1. Progressive Augmentation
-학습이 진행됨에 따라 데이터 증강 강도가 점진적으로 증가합니다:
+## Reports
 
-```python
-progress = epoch / args.epochs
-aug_strength = 1 - math.cos((math.pi / 2) * progress)  # 0.0 → 1.0
-```
+| Week | Date | Contents |
+|---|---|---|
+| [1](docs/week1_report.pdf) | 2025-08-14 | Dataset inspection, baseline analysis, first improvements |
+| [2](docs/week2_report.pdf) | 2025-08-20 | Baseline scaling, CoAtNet |
+| [3](docs/week3_report.pdf) | 2025-08-27 | ViT-family comparison at matched GFLOPs, learning-rate fix |
+| [4](docs/week4_report.pdf) | 2025-09-04 | Progressive augmentation, Swin-Large |
+| [5](docs/week5_report.pdf) | 2025-09-18 | Strength bug fix, error analysis |
 
-### 2. CutMix & MixUp
-- **CutMix**: 이미지의 일부 영역을 다른 이미지로 대체
-- **MixUp**: 두 이미지를 선형 보간하여 혼합
-- 학습 강도에 따라 적용 확률 조절
+---
 
-### 3. Cosine Annealing LR Scheduler
-학습률을 코사인 함수 형태로 감소시켜 안정적인 학습을 유도합니다.
+## References
 
-### 4. 앙상블 친화적 설계
-- 여러 모델 아키텍처를 쉽게 실험 가능
-- 체크포인트 자동 저장으로 모델 앙상블 구성 용이
-
-## 📈 실험 결과
-
-본 프로젝트는 Tiny-ImageNet 데이터셋에서 다양한 모델과 학습 기법을 적용한 실험을 완료했습니다.
-
-### 주요 성과
-- 다양한 아키텍처 실험 완료 (ResNet, ViT, Swin Transformer)
-- Progressive Augmentation 및 CutMix/MixUp 효과 검증
-- Wandb를 통한 체계적인 실험 관리 및 메트릭 추적
-
-## 🧪 실험 관리 (Weights & Biases)
-
-프로젝트는 wandb를 통해 다음 메트릭을 자동으로 추적합니다:
-
-- **학습 메트릭**: Loss, Top-1 Accuracy, Top-5 Accuracy
-- **검증 메트릭**: Loss, Top-1 Accuracy, Top-5 Accuracy
-- **학습률 & 증강 강도**: Epoch별 변화 추적
-
-### wandb 설정
-```bash
-wandb login
-# 이후 main.py 실행 시 자동으로 로깅됨
-```
-
-## 💾 체크포인트 및 결과물
-
-### 자동 저장 기능
-- 매 에포크마다 최신 체크포인트 자동 저장
-- 최고 성능 모델은 `best.pth.tar`로 별도 저장
-- 저장 위치: `checkpoints/YYYY-MM-DD_HH:MM/`
-- 테스트 예측 결과는 `best_test_preds.csv` 형식으로 저장
-
-### 저장되는 정보
-- 모델 가중치 (state_dict)
-- Optimizer 상태
-- Epoch 번호
-- Top-1 및 Top-5 정확도
-
-## 📝 구현된 기능
-
-### Task 0: 실험 로깅 ✅
-- [x] wandb 통합 완료
-- [x] 학습/검증 메트릭 추적 (Loss, Top-1/Top-5 Accuracy)
-- [x] Epoch별 학습률 및 증강 강도 로깅
-
-### Task 1: 하이퍼파라미터 튜닝 ✅
-- [x] 7가지 아키텍처 지원 (ResNet 5종, ViT/DeiT, Swin)
-- [x] Cosine Annealing LR Scheduler 적용
-- [x] AdamW Optimizer + Weight Decay
-
-### Task 2: 데이터 증강 ✅
-- [x] Progressive Augmentation (Cosine Scheduling)
-- [x] CutMix & MixUp 구현
-- [x] Albumentations 기반 다양한 증강 기법
-
-### Task 3: 데이터 분석 ✅
-- [x] 데이터셋 크기 분포 시각화 (`size_distribution_histograms.png`)
-- [x] Train/Val/Test 분할 통계 (`split_image_counts.png`)
-
-### Task 4: 실험 관리 ✅
-- [x] 체크포인트 자동 저장 시스템
-- [x] Best model 추적 및 저장
-- [x] 테스트 예측 결과 CSV 출력
-
-## 🔧 문제 해결
-
-### CUDA Out of Memory
-```bash
-# 배치 크기 줄이기
-python main.py --batch_size 64
-
-# 또는 더 작은 모델 사용
-python main.py --arch resnet18
-```
-
-### 학습 속도 개선
-```bash
-# num_workers 조정
-# train.py와 val.py의 DataLoader에서 num_workers=10 → 4로 변경
-```
-
-## 📚 참고 자료
-
-- [Tiny-ImageNet Dataset](http://cs231n.stanford.edu/tiny-imagenet-200.zip)
-- [timm Documentation](https://github.com/rwightman/pytorch-image-models)
+- [Tiny-ImageNet-200](http://cs231n.stanford.edu/tiny-imagenet-200.zip)
+- [timm](https://github.com/huggingface/pytorch-image-models) — pretrained ViT / DeiT / Swin
 - [Albumentations](https://albumentations.ai/)
-- [CutMix Paper](https://arxiv.org/abs/1905.04899)
-- [MixUp Paper](https://arxiv.org/abs/1710.09412)
-
-## 📄 라이센스
-
-이 프로젝트는 교육 목적으로 작성되었습니다.
-
-## 🙋‍♂️ 기여
-
-버그 리포트나 개선 제안은 Issue를 통해 제출해주세요.
+- Yun et al., *CutMix*, [arXiv:1905.04899](https://arxiv.org/abs/1905.04899)
+- Zhang et al., *mixup*, [arXiv:1710.09412](https://arxiv.org/abs/1710.09412)
+- Liu et al., *Swin Transformer*, [arXiv:2103.14030](https://arxiv.org/abs/2103.14030)
+- He et al., *Bag of Tricks for Image Classification with CNNs*,
+  [arXiv:1812.01187](https://arxiv.org/abs/1812.01187) — linear LR scaling
+- PS-SapAug (2024) — progressive augmentation strength, adapted here with a cosine ramp
