@@ -11,7 +11,8 @@ what was tried, what the data suggested, and what the errors said.**
 
 Tiny-ImageNet-200: 200 classes at 64×64.
 
-Weekly reports with the full numbers: [`docs/`](docs/) (week 1–5, in Korean).
+Weekly reports written across the five weeks, with the full numbers:
+[`docs/`](docs/) (week 1–5, in Korean).
 
 ---
 
