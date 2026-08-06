@@ -59,7 +59,7 @@ Augmentations were chosen from inspection of the dataset rather than from a defa
 - **No vertical flip.** Many classes are objects subject to gravity; an upside-down image is not a
   plausible sample.
 - **No hue/saturation shift.** Classes such as toad and frog share a shape and differ mainly in
-  colour, so colour jitter would erase the distinguishing signal.
+  colour, so colour jitter was judged likely to remove the distinguishing signal.
 
 Both exclusions were later reconsidered — dropping them outright was recorded at the time as
 probably an overcorrection.
@@ -75,7 +75,7 @@ The split was also found to be skewed: **train : val : test = 91 : 4.5 : 4.5**.
 | CoAtNet-0 (RandAugment + MixUp/CutMix + AdamW + LS 0.1) | 76.18 |
 | CoAtNet-0 + batch 256 + lr 0.002 | **77.38** |
 
-The jump from 61 to 77 with a conv+attention hybrid is what moved the project off ResNet.
+The conv+attention hybrid moved the results from 61 to 77.
 
 ### Week 3 — compare at equal compute, then fix the learning rate
 
@@ -88,7 +88,8 @@ settings (cosine LR, warmup, 224×224, seed 40, AdamW, 40 epochs, lr 1e-3):
 | DeiT-Small | ~4.6 G | 65.80 |
 | **Swin-Tiny** | ~4.5 G | **68.46** |
 
-Swin-Tiny wins at equal cost, so the rest of the project uses it.
+Swin-Tiny has the highest validation accuracy at comparable cost, so the rest of the project
+uses it.
 
 | Change | top-1 val |
 |---|---:|
