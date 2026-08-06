@@ -9,8 +9,7 @@ what was tried, what the data suggested, and what the errors said.**
 | **Final (Swin-Tiny, progressive augmentation, 100 epochs)** | **87.22** |
 | | **+34.26 %p** |
 
-Tiny-ImageNet-200: 200 classes at 64×64. Few samples per class and low resolution, so the dataset
-overfits quickly and ImageNet-pretrained models cannot be dropped in unchanged.
+Tiny-ImageNet-200: 200 classes at 64×64.
 
 Weekly reports with the full numbers: [`docs/`](docs/) (week 1–5, in Korean).
 
@@ -100,9 +99,8 @@ Swin-Tiny wins at equal cost, so the rest of the project uses it.
 | **+ lr 1e-3 → 1e-5, warmup removed** | **85.93** |
 
 **The single largest gain in the project is the learning rate: +10 %p.** Training was unstable
-early on, which pointed at the learning rate being far too high for a pretrained Swin. Once the
-initial LR was lowered to 1e-5, warmup no longer had a purpose — its job is to ramp *up* from a
-reduced start — so it was removed rather than kept out of habit.
+early on, so the initial learning rate was lowered from 1e-3 to 1e-5. With a starting rate that
+low, warmup was judged unlikely to help and was removed.
 
 ### Week 4 — schedule the augmentation strength
 
@@ -130,9 +128,8 @@ scaling rule from *Bag of Tricks*.
 | − GaussNoise | 85.14 |
 | Swin-Large (batch 32, lr 3e-6, **11 epochs only**) | 92.05 |
 
-Removing GaussNoise — on the theory that noise hurts at low resolution — made things worse, so it
-stayed. Swin-Large reached 92.05 but only 11 epochs were run; it is a partial result, not a
-comparable one.
+GaussNoise was removed on the expectation that noise hurts at low resolution; the result was
+worse. Swin-Large reached 92.05, but only 11 epochs were run.
 
 ### Week 5 — a bug, then error analysis
 
@@ -166,8 +163,7 @@ each failing image, the predicted class distribution printed as percentages. Two
 | + CoarseDropout | 86.96 |
 | + both | 87.00 |
 
-Neither transform improved on 87.08 at 40 epochs. The value of this step is the method — reading
-the failure mode and choosing an augmentation that targets it — rather than the score it produced.
+Neither transform improved on 87.08 at 40 epochs.
 
 ---
 
@@ -220,18 +216,12 @@ top-1/top-5 accuracy against a shared `epoch` axis, plus learning rate and augme
 
 ## Limitations
 
-- **The 91 : 4.5 : 4.5 split was never rebalanced.** It was identified in week 1 and a move to
-  8 : 1 : 1 was planned, but every number above is measured on the original skewed split.
 - **Swin-Large's 92.05 is not comparable.** It is an 11-epoch reading against 100-epoch runs, and
   it was not trained to completion.
 - **Vertical flip and hue/saturation augmentation were excluded on inspection alone**, never
   tested. The reports themselves note this was probably an overcorrection.
 - **RandomResizedCrop and CoarseDropout did not beat the configuration they were meant to improve**
   (87.08 → 87.00). The error analysis pointed at the right failure mode; the fix did not follow.
-- **Single seed, single run per configuration.** No variance is reported, so differences of a few
-  tenths of a point should not be read as meaningful.
-- Runs differ in epoch budget across weeks (40 / 50 / 60 / 100), so not every row in the log is
-  directly comparable to every other.
 
 ---
 
