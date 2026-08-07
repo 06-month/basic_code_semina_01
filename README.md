@@ -2,7 +2,7 @@
 
 **본 프로젝트는 AiRLab에서 수행한 첫번째 코딩 세미나의 결과물로써, Tiny-Imagenet-200 기반 Classification을 수행했다.**
 
-제공된 ResNet기반 baseline으로부터 87.22의 Top-1 valication accuracy를 달성한 기록이다.
+제공된 ResNet기반 baseline으로부터 87.22 %의 Top-1 valication accuracy를 달성한 기록이다.
 
 | | top-1 val acc |
 |---|---:|
