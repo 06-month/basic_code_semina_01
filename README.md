@@ -1,7 +1,8 @@
-# Tiny-ImageNet-200 분류
+# Tiny-ImageNet-200 Classification
 
-**제공된 ResNet-18 baseline에서 top-1 validation 정확도 87.22%까지. 5주 동안 무엇을 시도했고, 데이터가
-무엇을 시사했으며, 오류가 무엇을 말해줬는지에 대한 기록이다.**
+**본 프로젝트는 AiRLab에서 수행한 첫번째 코딩 세미나의 결과물로써, Tiny-Imagenet-200 기반 Classification을 수행했다.**
+
+제공된 ResNet기반 baseline으로부터 87.22의 Top-1 valication accuracy를 달성한 기록이다.
 
 | | top-1 val acc |
 |---|---:|
@@ -17,8 +18,8 @@ Tiny-ImageNet-200: 64×64 해상도, 200개 class.
 
 ## 출발점
 
-이 프로젝트는 수업에서 제공한 skeleton에서 시작했다. augmentation도 로깅도 없고 스케줄이 고정된 ResNet-18
-학습 루프였다. 아래 표가 바뀐 내용이다.
+이 프로젝트는 augmentation도 로깅도 없고 스케줄이 고정된 ResNet-18 기반 baseline이었다.
+아래 표는 적용한 기법들의 요약이다.
 
 | | 제공된 skeleton | 이 저장소 |
 |---|---|---|
@@ -41,7 +42,7 @@ augmentation 스케줄이 mixing 확률과 Beta 파라미터를 함께 제어할
 5주간의 기록이며 top-1 validation 정확도로 측정했다. 모든 행이 실제 실행 결과이고, 사후에 재구성한
 경로가 아니다.
 
-### 1주차 — 데이터를 먼저 보고 나서 튜닝하기
+### 1주차 — 데이터 분석 후 augmentation 적용
 
 | 변경 | top-1 val |
 |---|---:|
@@ -53,10 +54,10 @@ augmentation 스케줄이 mixing 확률과 Beta 파라미터를 함께 제어할
 | ResNet-152 + SGD | 58.98 |
 | ResNet-101 + AdamW | 54.12 |
 
-augmentation은 기본 목록에서 고른 것이 아니라 데이터셋을 직접 살펴보고 선택했다.
+augmentation은 기본 목록에서 고른 것이 아니라 데이터셋 분석 후 결정하였다.
 
-- **수직 뒤집기 제외.** 중력의 영향을 받는 사물 class가 많아서, 위아래가 뒤집힌 이미지는 있을 법한
-  샘플이 아니다.
+- **horizontal flip 제외.** 중력의 영향을 받는 사물 class가 많아서, 위아래가 뒤집힌 이미지는 있을 법한
+  샘플이 아니기에 적용하지 않았다.
 - **hue/saturation 변경 제외.** 두꺼비와 개구리처럼 형태를 공유하고 주로 색으로 구분되는 class가 있어서,
   색상 jitter가 구분 신호를 지워버릴 것으로 판단했다.
 
@@ -64,7 +65,7 @@ augmentation은 기본 목록에서 고른 것이 아니라 데이터셋을 직�
 
 데이터 분할이 치우쳐 있다는 것도 이때 확인했다. **train : val : test = 91 : 4.5 : 4.5**.
 
-### 2주차 — baseline을 키운 뒤 CNN에서 벗어나기
+### 2주차 — 모델 탐색
 
 | 변경 | top-1 val |
 |---|---:|
@@ -73,9 +74,7 @@ augmentation은 기본 목록에서 고른 것이 아니라 데이터셋을 직�
 | CoAtNet-0 (RandAugment + MixUp/CutMix + AdamW + LS 0.1) | 76.18 |
 | CoAtNet-0 + batch 256 + lr 0.002 | **77.38** |
 
-conv와 attention을 결합한 하이브리드가 결과를 61에서 77로 끌어올렸다.
-
-### 3주차 — 동일 연산량에서 비교한 뒤 learning rate 바로잡기
+### 3주차 — 트랜스포머 모델 탐색
 
 ViT 계열 경량 모델 세 개를 **GFLOPs를 맞춘 조건(~4.5 G)**에서 동일한 설정으로 비교했다
 (cosine LR, warmup, 224×224, seed 40, AdamW, 40 epoch, lr 1e-3).
@@ -100,7 +99,7 @@ ViT 계열 경량 모델 세 개를 **GFLOPs를 맞춘 조건(~4.5 G)**에서 �
 learning rate를 1e-3에서 1e-5로 낮췄다. 시작 learning rate가 그렇게 낮으면 warmup이 도움이 되지 않을
 것으로 판단해 함께 제거했다.
 
-### 4주차 — augmentation 강도를 스케줄링하기
+### 4주차 — augmentation 강도를 스케줄링
 
 이 시점의 결과는 underfitting 양상이었고, 이는 초반에 약하게 augmentation하고 후반에 강하게 하는 방향을
 시사한다. **PS-SapAug (2024)**가 정확히 그 방식을 제안하는데, 단계별 스케줄을 쓴다. 이 프로젝트는 같은
@@ -128,7 +127,7 @@ batch size도 64에서 128로 옮겼기 때문에, *Bag of Tricks*의 선형 스
 GaussNoise는 저해상도에서 노이즈가 해로울 것이라 보고 제거했는데, 결과는 오히려 나빠졌다. Swin-Large는
 92.05에 도달했지만 11 epoch만 실행했다.
 
-### 5주차 — 버그 하나, 그리고 오류 분석
+### 5주차 — 버그 및 오류 분석
 
 강도 스케줄이 **CutMix/MixUp까지 전달되지 않고 있었다.** transform 확률은 조정되는데 mixing 계수는
 그렇지 않았다. `strength`를 그쪽에도 연결한 뒤, 비교 가능하도록 40 epoch로 고정해 측정했다.
@@ -211,16 +210,12 @@ checkpoint는 epoch마다 `checkpoints/YYYY-MM-DD_HH:MM/`에 기록되고, 최�
 
 ## 한계
 
-- **Swin-Large의 92.05는 비교 대상이 아니다.** 100 epoch 실행들과 달리 11 epoch 시점의 수치이고,
-  끝까지 학습하지 않았다.
-- **수직 뒤집기와 hue/saturation augmentation은 눈으로 보고 제외했을 뿐 시험해보지 않았다.** 보고서에도
-  과도한 교정이었을 가능성이 높다고 적어두었다.
-- **RandomResizedCrop과 CoarseDropout은 개선하려던 설정을 넘지 못했다** (87.08 → 87.00). 오류 분석은
-  올바른 실패 유형을 짚었지만, 그에 대한 처방은 따라가지 못했다.
+- **horizontal flip과 hue/saturation augmentation의 미적용은 실제 실험을 진행하지 않은 채 제외하였다.**
+- **RandomResizedCrop과 CoarseDropout은 개선하려던 설정을 넘지 못했다** (87.08 → 87.00).
 
 ---
 
-## 저장소 구조
+## 디렉토리 구조
 
 ```
 .
