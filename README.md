@@ -56,7 +56,7 @@ augmentation 스케줄이 mixing 확률과 Beta 파라미터를 함께 제어할
 
 augmentation은 기본 목록에서 고른 것이 아니라 데이터셋 분석 후 결정하였다.
 
-- **horizontal flip 제외.** 중력의 영향을 받는 사물 class가 많아서, 위아래가 뒤집힌 이미지는 있을 법한
+- **vertical flip 제외.** 중력의 영향을 받는 사물 class가 많아서, 위아래가 뒤집힌 이미지는 있을 법한
   샘플이 아니기에 적용하지 않았다.
 - **hue/saturation 변경 제외.** 두꺼비와 개구리처럼 형태를 공유하고 주로 색으로 구분되는 class가 있어서,
   색상 jitter가 구분 신호를 지워버릴 것으로 판단했다.
@@ -210,7 +210,7 @@ checkpoint는 epoch마다 `checkpoints/YYYY-MM-DD_HH:MM/`에 기록되고, 최�
 
 ## 한계
 
-- **horizontal flip과 hue/saturation augmentation의 미적용은 실제 실험을 진행하지 않은 채 제외하였다.**
+- **vertical flip과 hue/saturation augmentation의 미적용은 실제 실험을 진행하지 않은 채 제외하였다.**
 - **RandomResizedCrop과 CoarseDropout은 개선하려던 설정을 넘지 못했다** (87.08 → 87.00).
 
 ---
